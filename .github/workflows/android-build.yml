@@ -5,13 +5,19 @@ on:
     branches:
       - main
     paths:
-      - 'android/**'
+      - 'app/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle/**'
       - '.github/workflows/android-build.yml'
   pull_request:
     branches:
       - main
     paths:
-      - 'android/**'
+      - 'app/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle/**'
       - '.github/workflows/android-build.yml'
   workflow_dispatch:
 
@@ -34,21 +40,19 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Create Gradle Wrapper
-        working-directory: android
         run: gradle wrapper --gradle-version 8.10.2
 
       - name: Make Gradle Wrapper executable
-        run: chmod +x android/gradlew
+        run: chmod +x ./gradlew
 
       - name: Build Debug APK
-        working-directory: android
         run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: personal-coacher-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: heartquest-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
       - name: Get APK info
@@ -76,19 +80,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Create Gradle Wrapper
-        working-directory: android
         run: gradle wrapper --gradle-version 8.10.2
 
       - name: Make Gradle Wrapper executable
-        run: chmod +x android/gradlew
+        run: chmod +x ./gradlew
 
       - name: Build Release APK (unsigned)
-        working-directory: android
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: personal-coacher-release-unsigned
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          name: heartquest-release-unsigned
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
           retention-days: 30
