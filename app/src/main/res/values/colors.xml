@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="deep_rose">#FFB71C6E</color>
+    <color name="warm_pink">#FFFF6B9D</color>
+    <color name="soft_blush">#FFFFC3D6</color>
+    <color name="midnight_blue">#FF1A1A3E</color>
+    <color name="deep_purple">#FF2D1B69</color>
+    <color name="twilight">#FF4A3880</color>
+    <color name="golden_glow">#FFFFD700</color>
+    <color name="soft_white">#FFFAF0F5</color>
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#CCFFFFFF</color>
+    <color name="heart_red">#FFFF1744</color>
+    <color name="success_green">#FF4CAF50</color>
+</resources>
