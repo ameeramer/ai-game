@@ -1,12 +1,12 @@
 # HeartQuest - AI Dating Game
 
 ## Project Overview
-HeartQuest is a 3D Android dating simulation game where the player tries to win the heart of Adrian, a handsome male NPC powered by Claude Opus 4.6 LLM. The game features mission-based progression, real-time 3D rendering, and AI-driven dialogue and analysis.
+HeartQuest is a 2D Android dating simulation game where the player controls a character who tries to win the heart of Adrian, an NPC whose dialogue and actions are driven by Claude Opus 4.6 LLM. The game features top-down 2D gameplay with joystick movement, context-sensitive action buttons, and AI-driven NPC behavior.
 
 ## Tech Stack
 - **Language**: Kotlin
 - **UI Framework**: Jetpack Compose + Material 3
-- **3D Rendering**: OpenGL ES 2.0 (custom shaders, low-poly character models)
+- **2D Rendering**: Compose Canvas (procedural drawing)
 - **AI Backend**: Anthropic Claude API (claude-opus-4-6)
 - **Networking**: OkHttp3
 - **Persistence**: Jetpack DataStore Preferences
@@ -19,26 +19,23 @@ app/src/main/java/com/aigame/heartquest/
 ├── MainActivity.kt          # Entry point + Compose navigation
 ├── GameViewModel.kt          # Main ViewModel orchestrating game logic
 ├── ai/
-│   └── ClaudeAIService.kt    # Anthropic API client for NPC AI + mission analysis
+│   └── ClaudeAIService.kt    # Anthropic API client for NPC reactions + mission analysis
 ├── data/
 │   └── PreferencesManager.kt # DataStore-based persistence (API key, progress)
 ├── game/
-│   ├── GameState.kt          # Runtime game state, chat history, affection
-│   └── MissionManager.kt     # Mission definitions + prompt engineering
-├── renderer/
-│   ├── GameRenderer.kt       # Main OpenGL ES renderer (scene orchestration)
-│   ├── NpcCharacterModel.kt  # 3D character model built from primitives
-│   ├── GroundPlane.kt        # Scene floor with gradient lighting
-│   ├── SkyGradient.kt        # Animated sky background with stars
-│   └── ParticleSystem.kt     # Mood-reactive particle effects
+│   ├── Entity.kt             # Vec2, Direction, NpcBehavior, SceneObject, PlayerAction
+│   ├── GameEngine.kt         # Game loop: movement, collision, NPC behavior, timers
+│   ├── GameState.kt          # Runtime game state: positions, speech, interactions
+│   ├── MissionManager.kt     # Mission definitions + AI prompt engineering
+│   └── SceneDefinition.kt    # Scene layouts, objects, and actions per mission
 └── ui/
     ├── components/
     │   ├── AffectionBar.kt   # Animated affection progress bar
-    │   ├── ChatBubble.kt     # Styled chat bubbles (player/NPC/narrator)
-    │   └── GameGLSurfaceView.kt # GLSurfaceView wrapper for Compose
+    │   ├── GameCanvas.kt     # 2D Canvas rendering (characters, objects, effects)
+    │   └── VirtualJoystick.kt # Touch joystick for player movement
     ├── screens/
     │   ├── MainMenuScreen.kt      # Title screen with animated heart
-    │   ├── GameScreen.kt          # Main gameplay: 3D view + chat interface
+    │   ├── GameScreen.kt          # Main gameplay: canvas + actions + joystick
     │   ├── SettingsScreen.kt      # API key + player name configuration
     │   └── MissionCompleteScreen.kt # Post-mission AI analysis display
     └── theme/
@@ -62,27 +59,44 @@ app/src/main/java/com/aigame/heartquest/
 
 ## Game Architecture
 
+### Gameplay
+- **Top-down 2D view**: Player moves around mission scenes using a virtual joystick
+- **Action-based interaction**: When near Adrian, context-sensitive action buttons appear (e.g., "Share Umbrella", "Discuss Painting", "Take His Hand")
+- **No text input**: Player interacts through predefined actions; the LLM decides NPC reactions
+- **NPC autonomy**: Adrian moves, turns, approaches, or steps back based on LLM responses
+
 ### Missions
-5 missions with progressive intimacy: Cafe meeting -> Art gallery -> Rainy walk -> Cooking together -> Stargazing confession. Each mission has a scenario, interaction threshold, and target affection gain.
+5 missions with progressive intimacy: Cafe meeting -> Art gallery -> Rainy walk -> Cooking together -> Stargazing confession. Each mission has a unique scene layout, objects, weather effects, and action set.
 
 ### AI Integration
-- **NPC Dialogue**: Each player message is sent to Claude with a system prompt containing Adrian's personality, current mood, affection level, and behavior rules. Claude responds with dialogue, mood, and affection delta as JSON.
-- **Mission Analysis**: After completing a mission, the full conversation is sent to Claude for narrative analysis, affection scoring, and player advice.
+- **NPC Reactions**: Each player action is sent to Claude with Adrian's personality, current mood, affection level, and interaction history. Claude responds with dialogue, mood, affection delta, and physical action as JSON.
+- **NPC Actions**: `approach_player`, `step_back`, `turn_away`, `face_player`, `emote`, `idle`
+- **Mission Analysis**: After completing a mission, the interaction history is sent to Claude for narrative analysis, affection scoring, and player advice.
 
-### 3D Rendering
-- OpenGL ES 2.0 with custom GLSL shaders
-- Low-poly character built from geometric primitives (tapered boxes + sphere)
-- Mood-reactive animations (idle sway, happy bounce, flirty lean, shy look-down)
-- Particle system changes based on NPC mood (hearts, sparkles, ambient glow)
-- Dynamic scene ambience per mission (sunset, gallery lighting, rain, starlight)
+### 2D Rendering
+- Compose Canvas with procedural drawing (no external assets)
+- Characters drawn from primitives (circles, rectangles, arcs)
+- Scene objects per mission (tables, trees, paintings, kitchen items, telescope)
+- Weather effects (rain, fireflies, sparkles)
+- Speech bubbles above NPC, action text above player
+- Mood-reactive particles and color indicators
+
+### Game Engine
+- Frame-based update loop using `withFrameMillis`
+- Player movement with joystick input and collision detection
+- NPC behavior state machine (idle, walking, approaching, stepping back, emoting, turned away)
+- Timed speech bubbles and action text
+- Interaction range detection
 
 ### State Management
-- `GameState`: Compose-observable mutable state for real-time UI updates
+- `GameState`: Compose-observable mutable state for positions, speech, mood, interactions
+- `GameEngine`: Updates positions, NPC behavior, timers each frame
 - `GameViewModel`: Android ViewModel orchestrating AI calls, state updates, persistence
 - `PreferencesManager`: DataStore for API key, player name, and save progress
 
 ## Key Design Decisions
 - API key stored locally in DataStore (user provides their own Anthropic key)
-- 3D models built from code primitives (no external asset files needed for MVP)
-- Chat-based interaction overlaid on 3D scene for accessible gameplay
-- Claude's structured JSON responses enable programmatic mood/affection tracking
+- 2D characters and scenes built from Canvas primitives (no external asset files)
+- Action-based gameplay (not text chat) for true game feel
+- Only NPC dialogue and behavior are LLM-driven; player controls are deterministic
+- Claude's structured JSON responses include physical actions for NPC movement

@@ -2,64 +2,65 @@ package com.aigame.heartquest.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.aigame.heartquest.game.ChatMessage
+import com.aigame.heartquest.game.GameEngine
 import com.aigame.heartquest.game.GameState
-import com.aigame.heartquest.game.NpcAnimation
+import com.aigame.heartquest.game.PlayerAction
 import com.aigame.heartquest.ui.components.AffectionBar
-import com.aigame.heartquest.ui.components.ChatBubble
-import com.aigame.heartquest.ui.components.GameGLSurfaceView
+import com.aigame.heartquest.ui.components.GameCanvas
+import com.aigame.heartquest.ui.components.VirtualJoystick
 import com.aigame.heartquest.ui.theme.*
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withFrameMillis
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GameScreen(
     gameState: GameState,
-    onSendMessage: (String) -> Unit,
+    gameEngine: GameEngine,
+    onPlayerAction: (PlayerAction) -> Unit,
     onCompleteMission: () -> Unit,
     onBack: () -> Unit
 ) {
-    var inputText by remember { mutableStateOf("") }
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     val mission = gameState.currentMission
+    val scene = gameState.currentScene.value
+    val isNear = gameState.isNearNpc.value
+    val isLoading = gameState.isLoading.value
+    val canComplete = gameState.interactionCount.value >= mission.completionThreshold
 
-    // Auto-scroll to bottom when new messages arrive
-    LaunchedEffect(gameState.chatHistory.size) {
-        if (gameState.chatHistory.isNotEmpty()) {
-            listState.animateScrollToItem(gameState.chatHistory.size - 1)
+    // Game loop
+    LaunchedEffect(Unit) {
+        var lastFrameTime = 0L
+        while (isActive) {
+            withFrameMillis { frameTime ->
+                val delta = if (lastFrameTime == 0L) 0f else (frameTime - lastFrameTime) / 1000f
+                lastFrameTime = frameTime
+                gameEngine.update(delta.coerceAtMost(0.1f))
+            }
         }
     }
-
-    val canCompleteMission = gameState.interactionCount.value >= mission.completionThreshold
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MidnightBlue)
     ) {
-        // Top bar with mission info
+        // Top bar
         Surface(
             color = Color(0xFF1E1E42),
             shadowElevation = 4.dp
@@ -91,11 +92,10 @@ fun GameScreen(
                             text = mission.description,
                             fontSize = 11.sp,
                             color = SoftWhite.copy(alpha = 0.5f),
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-
-                    // Mood indicator
                     NpcMoodBadge(mood = gameState.npcMood.value)
                 }
 
@@ -104,92 +104,64 @@ fun GameScreen(
             }
         }
 
-        // 3D Scene viewport (top portion)
+        // 2D Game Canvas
         Box(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
-                .height(200.dp)
-                .background(Color(0xFF0A0A20))
         ) {
-            AndroidView(
-                factory = { context ->
-                    GameGLSurfaceView(context).apply {
-                        setNpcAnimation(gameState.npcAnimationState.value)
-                    }
-                },
-                update = { view ->
-                    view.setNpcAnimation(gameState.npcAnimationState.value)
-                    // Adjust scene ambience based on mission
-                    val ambience = when (gameState.currentMissionIndex.value) {
-                        0 -> 0.8f  // Sunset cafe
-                        1 -> 0.6f  // Art gallery
-                        2 -> 0.4f  // Rainy day
-                        3 -> 0.7f  // Apartment
-                        4 -> 0.2f  // Stargazing
-                        else -> 0.5f
-                    }
-                    view.setSceneAmbience(ambience)
-                },
+            GameCanvas(
+                gameState = gameState,
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Gradient overlay at bottom of 3D scene
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(30.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, MidnightBlue)
-                        )
+            // Scenario text at start
+            if (gameState.interactionCount.value == 0 && !isLoading) {
+                Surface(
+                    color = Color(0xCC1A1A2E),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp, start = 16.dp, end = 16.dp)
+                ) {
+                    Text(
+                        text = mission.scenario,
+                        color = SoftWhite.copy(alpha = 0.8f),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(12.dp),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
                     )
-            )
-        }
-
-        // Chat messages area
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(vertical = 8.dp)
-        ) {
-            items(gameState.chatHistory.toList()) { message ->
-                ChatBubble(message = message)
+                }
             }
 
-            // Loading indicator
-            if (gameState.isLoading.value) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 12.dp, top = 8.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = WarmPink,
-                                strokeWidth = 2.dp
-                            )
-                            Text(
-                                "Adrian is typing...",
-                                color = SoftWhite.copy(alpha = 0.5f),
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
+            // Proximity hint
+            AnimatedVisibility(
+                visible = isNear && !isLoading && gameState.npcSpeechText.value.isEmpty(),
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 8.dp)
+            ) {
+                Surface(
+                    color = Color(0xAA1A1A2E),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text(
+                        text = "Choose an action below",
+                        color = GoldenGlow,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
                 }
             }
         }
 
-        // Complete mission button (when threshold reached)
+        // Complete mission button
         AnimatedVisibility(
-            visible = canCompleteMission && !gameState.isLoading.value,
+            visible = canComplete && !isLoading,
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut()
         ) {
@@ -208,7 +180,7 @@ fun GameScreen(
             }
         }
 
-        // Input area
+        // Bottom controls: action buttons + joystick
         Surface(
             color = Color(0xFF1E1E42),
             shadowElevation = 8.dp
@@ -216,70 +188,119 @@ fun GameScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(8.dp),
+                verticalAlignment = Alignment.Bottom
             ) {
-                OutlinedTextField(
-                    value = inputText,
-                    onValueChange = { inputText = it },
+                // Action buttons (left side)
+                Column(
                     modifier = Modifier.weight(1f),
-                    placeholder = {
-                        Text(
-                            "Type your action or dialogue...",
-                            color = SoftWhite.copy(alpha = 0.3f),
-                            fontSize = 14.sp
-                        )
-                    },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = SoftWhite,
-                        unfocusedTextColor = SoftWhite,
-                        cursorColor = WarmPink,
-                        focusedBorderColor = WarmPink,
-                        unfocusedBorderColor = Twilight,
-                        focusedContainerColor = Color(0x11FFFFFF),
-                        unfocusedContainerColor = Color(0x11FFFFFF),
-                    ),
-                    singleLine = false,
-                    maxLines = 3,
-                    enabled = !gameState.isLoading.value
-                )
-
-                Spacer(Modifier.width(8.dp))
-
-                FloatingActionButton(
-                    onClick = {
-                        if (inputText.isNotBlank() && !gameState.isLoading.value) {
-                            onSendMessage(inputText.trim())
-                            inputText = ""
-                        }
-                    },
-                    containerColor = if (inputText.isNotBlank() && !gameState.isLoading.value)
-                        DeepRose else Twilight,
-                    modifier = Modifier.size(48.dp),
-                    shape = CircleShape
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(
-                        Icons.Filled.Send,
-                        contentDescription = "Send",
-                        tint = SoftWhite,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    if (isNear && !isLoading && scene != null) {
+                        val actions = scene.actions
+                        val topRow = actions.take((actions.size + 1) / 2)
+                        val bottomRow = actions.drop((actions.size + 1) / 2)
+
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            topRow.forEach { action ->
+                                ActionButton(
+                                    action = action,
+                                    onClick = { onPlayerAction(action) },
+                                    enabled = !isLoading
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            bottomRow.forEach { action ->
+                                ActionButton(
+                                    action = action,
+                                    onClick = { onPlayerAction(action) },
+                                    enabled = !isLoading
+                                )
+                            }
+                        }
+                    } else if (isLoading) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(8.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = WarmPink,
+                                strokeWidth = 2.dp
+                            )
+                            Text(
+                                "Adrian is thinking...",
+                                color = SoftWhite.copy(alpha = 0.5f),
+                                fontSize = 12.sp
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "Walk to Adrian to interact",
+                            color = SoftWhite.copy(alpha = 0.3f),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
                 }
+
+                // Joystick (right side)
+                VirtualJoystick(
+                    onInput = { input ->
+                        gameState.joystickInput.value = input
+                    },
+                    modifier = Modifier.padding(start = 4.dp)
+                )
             }
         }
     }
 }
 
 @Composable
+private fun ActionButton(
+    action: PlayerAction,
+    onClick: () -> Unit,
+    enabled: Boolean
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.height(36.dp),
+        shape = RoundedCornerShape(18.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = DeepRose.copy(alpha = 0.8f),
+            disabledContainerColor = Twilight.copy(alpha = 0.4f)
+        ),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+    ) {
+        Text(action.emoji, fontSize = 14.sp)
+        Spacer(Modifier.width(4.dp))
+        Text(
+            action.label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
 private fun NpcMoodBadge(mood: String) {
     val (emoji, color) = when (mood) {
-        "happy" -> "😊" to SuccessGreen
-        "flirty" -> "😏" to WarmPink
-        "annoyed" -> "😒" to Color(0xFFFF9800)
-        "shy" -> "😳" to SoftBlush
-        "laughing" -> "😂" to GoldenGlow
-        else -> "😐" to Color(0xFF888888)
+        "happy" -> "\uD83D\uDE0A" to SuccessGreen
+        "flirty" -> "\uD83D\uDE0F" to WarmPink
+        "annoyed" -> "\uD83D\uDE12" to Color(0xFFFF9800)
+        "shy" -> "\uD83D\uDE33" to SoftBlush
+        "laughing" -> "\uD83D\uDE02" to GoldenGlow
+        else -> "\uD83D\uDE10" to Color(0xFF888888)
     }
 
     Surface(

@@ -5,8 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -43,7 +41,6 @@ fun HeartQuestApp(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Show errors as snackbar
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -51,7 +48,6 @@ fun HeartQuestApp(
         }
     }
 
-    // Watch for mission completion
     LaunchedEffect(viewModel.gameState.isMissionComplete.value) {
         if (viewModel.gameState.isMissionComplete.value) {
             currentScreen = Screen.MISSION_COMPLETE
@@ -108,8 +104,9 @@ fun HeartQuestApp(
             Screen.GAME -> {
                 GameScreen(
                     gameState = viewModel.gameState,
-                    onSendMessage = { message ->
-                        viewModel.sendMessage(message)
+                    gameEngine = viewModel.gameEngine,
+                    onPlayerAction = { action ->
+                        viewModel.performAction(action)
                     },
                     onCompleteMission = {
                         viewModel.completeMission()

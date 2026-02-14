@@ -5,7 +5,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aigame.heartquest.ai.ClaudeAIService
 import com.aigame.heartquest.data.PreferencesManager
+import com.aigame.heartquest.game.GameEngine
 import com.aigame.heartquest.game.GameState
+import com.aigame.heartquest.game.MissionAnalysis
+import com.aigame.heartquest.game.PlayerAction
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -14,6 +17,7 @@ import kotlinx.coroutines.launch
 class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     val gameState = GameState()
+    val gameEngine = GameEngine(gameState)
     val preferencesManager = PreferencesManager(application)
     private val aiService = ClaudeAIService()
 
@@ -66,41 +70,46 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun sendMessage(text: String) {
+    fun performAction(action: PlayerAction) {
         if (_apiKey.value.isBlank()) {
             _errorMessage.value = "Please set your Claude API key in Settings first."
             return
         }
 
-        gameState.addPlayerMessage(text)
+        gameEngine.showPlayerAction(action.label)
         gameState.isLoading.value = true
         _errorMessage.value = null
 
         viewModelScope.launch {
             try {
-                val response = aiService.getNpcResponse(
+                val reaction = aiService.getNpcReaction(
                     apiKey = _apiKey.value,
                     gameState = gameState,
-                    playerMessage = text
+                    playerAction = action
                 )
 
-                gameState.addNpcMessage(response.dialogue)
-                gameState.updateMoodFromString(response.mood)
+                gameEngine.showNpcSpeech(reaction.dialogue)
+                gameState.npcMood.value = reaction.mood.lowercase().trim()
+                gameEngine.applyNpcAction(reaction.npcAction)
 
-                // Update affection level (clamped 0-100)
-                val newAffection = (gameState.affectionLevel.value + response.affectionDelta)
+                val newAffection = (gameState.affectionLevel.value + reaction.affectionDelta)
                     .coerceIn(0, 100)
                 gameState.affectionLevel.value = newAffection
 
-                // Show affection change feedback
-                if (response.affectionDelta != 0) {
-                    val sign = if (response.affectionDelta > 0) "+" else ""
-                    gameState.addSystemMessage("${sign}${response.affectionDelta} Affection")
+                if (reaction.affectionDelta != 0) {
+                    gameState.showAffectionDelta(reaction.affectionDelta)
                 }
 
+                gameState.recordInteraction(
+                    actionId = action.id,
+                    actionLabel = action.label,
+                    npcDialogue = reaction.dialogue,
+                    npcMood = reaction.mood
+                )
+
             } catch (e: Exception) {
-                gameState.addSystemMessage("Error: ${e.message ?: "Failed to get response"}")
                 _errorMessage.value = e.message
+                gameEngine.showNpcSpeech("...")
             } finally {
                 gameState.isLoading.value = false
             }
@@ -118,14 +127,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     gameState = gameState
                 )
 
-                // Apply the analysis affection change
                 val newAffection = (gameState.affectionLevel.value + analysis.affectionChange)
                     .coerceIn(0, 100)
                 gameState.affectionLevel.value = newAffection
-                gameState.updateMoodFromString(analysis.npcMood)
+                gameState.npcMood.value = analysis.npcMood
                 gameState.missionAnalysis.value = analysis
 
-                // Save progress
                 preferencesManager.saveProgress(
                     affection = newAffection,
                     missionIndex = gameState.currentMissionIndex.value
@@ -133,7 +140,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 _hasSavedGame.value = true
 
             } catch (e: Exception) {
-                gameState.missionAnalysis.value = com.aigame.heartquest.game.MissionAnalysis(
+                gameState.missionAnalysis.value = MissionAnalysis(
                     summary = "The mission has concluded. (Analysis unavailable: ${e.message})",
                     affectionChange = 0,
                     npcMood = gameState.npcMood.value,
