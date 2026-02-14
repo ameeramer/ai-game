@@ -25,8 +25,8 @@ import com.aigame.heartquest.ui.components.AffectionBar
 import com.aigame.heartquest.ui.components.GameCanvas
 import com.aigame.heartquest.ui.components.VirtualJoystick
 import com.aigame.heartquest.ui.theme.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withFrameMillis
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,15 +43,15 @@ fun GameScreen(
     val isLoading = gameState.isLoading.value
     val canComplete = gameState.interactionCount.value >= mission.completionThreshold
 
-    // Game loop
+    // Game loop (~60 fps)
     LaunchedEffect(Unit) {
-        var lastFrameTime = 0L
+        var lastTime = System.nanoTime()
         while (isActive) {
-            withFrameMillis { frameTime ->
-                val delta = if (lastFrameTime == 0L) 0f else (frameTime - lastFrameTime) / 1000f
-                lastFrameTime = frameTime
-                gameEngine.update(delta.coerceAtMost(0.1f))
-            }
+            val now = System.nanoTime()
+            val delta = (now - lastTime) / 1_000_000_000f
+            lastTime = now
+            gameEngine.update(delta.coerceAtMost(0.1f))
+            delay(16L)
         }
     }
 
@@ -136,17 +136,13 @@ fun GameScreen(
             }
 
             // Proximity hint
-            AnimatedVisibility(
-                visible = isNear && !isLoading && gameState.npcSpeechText.value.isEmpty(),
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 8.dp)
-            ) {
+            if (isNear && !isLoading && gameState.npcSpeechText.value.isEmpty()) {
                 Surface(
                     color = Color(0xAA1A1A2E),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
                 ) {
                     Text(
                         text = "Choose an action below",
